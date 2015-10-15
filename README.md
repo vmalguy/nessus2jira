@@ -11,6 +11,12 @@ This python script allow you to import [Tenable Nessus scan](http://http://www.t
 
 
 ### Usage
+
 this script will report in  jira tickets the result of a nessus scan
 
 exemple : nessus scan "scan_WEBSITE" will report in jira "WEBSITE" project, one ticket per hosts
+
+### configuration
+
+You need to setup a scan in nessus matching one of you jira project
+You need provide valid credential (or API key) to acces both Nessus and Jira API
