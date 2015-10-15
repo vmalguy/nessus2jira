@@ -18,5 +18,5 @@ exemple : nessus scan "scan_WEBSITE" will report in jira "WEBSITE" project, one 
 
 ### configuration
 
-You need to setup a scan in nessus matching one of you jira project
-You need provide valid credential (or API key) to acces both Nessus and Jira API
+* You need to setup a scan in nessus matching one of you jira project
+* You need provide valid credential (or API key) to acces both Nessus and Jira API
