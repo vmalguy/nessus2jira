@@ -12,15 +12,18 @@ from nessrest import ness6rest
 from jira import JIRA
 
 # Nessus credentials and setup
-my_api_akey = ''
-my_api_skey = ''
-scan = ness6rest.Scanner(url="https://nessusscanner:8834",api_akey=my_api_akey,api_skey=my_api_skey, insecure=True)
+scan_policy = "nessus2jira"
+api_akey = ''
+api_skey = ''
+scan = ness6rest.Scanner(url="https://my_nessus_scanner:8443",
+                         api_akey=api_akey,
+                         api_skey=api_skey, insecure=True)
 
 # Jira Credential and setup
 options = {
-    'server': 'https://jira.atlassian.com
+    'server': 'https://my_jira_server'
 }
-jira = JIRA(options,basic_auth=('', ''))
+jira = JIRA(options, basic_auth=('', ''))
 # or using OAuth
 # key_cert_data = None
 # with open(key_cert, 'r') as key_cert_file:
@@ -34,68 +37,108 @@ jira = JIRA(options,basic_auth=('', ''))
 # }
 # authed_jira = JIRA(oauth=oauth_dict)
 
-#parsing all the project to search for corresponding scan in nessus
+
+def build_issue(project_key, host_result):
+    num_vuln = 0
+    description = "list of pending vulnerabilities:\n"
+    summary = ""
+    for vuln in host_result["vulnerabilities"]:
+        # If the server cant be ping , raise a warning
+        if (vuln["plugin_id"] == 10180):
+            num_vuln = num_vuln + 1
+            summary = ("[SCAN] The remote host %s is considered as dead \
+            - not scanning" % (host_result["info"]["host-ip"]))
+        if (vuln["severity"] > 2):
+            num_vuln = num_vuln + 1
+            description = description + ("%s, severity: %s\n" %
+                                         (vuln["plugin_name"],
+                                          vuln["severity"]))
+            summary = ("[SCAN] %s: %i patch(s) pending" %
+                       (host_result["info"]["host-ip"], num_vuln))
+    issue = {
+        'project': project_key,
+        'summary': summary,
+        'description': description,
+        'issuetype': {'name': 'Improvement'},
+    }
+    return (issue, num_vuln)
+
+
+def find_issue(project_key, host_ip):
+    return jira.search_issues('project = \'' + project_key
+                              + '\' ' +
+                              'AND summary ~ \'SCAN\' ' +
+                              'AND summary ~ ' + host_ip)
+
+
+def update_jira_ticket(host_result, ticket_id, num_vuln, issue_dict):
+    if ticket_id:
+        print("%s: UPDATING jira ticket: %s" %
+              (host_result["info"]["host-ip"], ticket_id[0]))
+        issue = jira.issue(ticket_id[0])
+        if num_vuln:
+            print "still have some vuln, ensure it is open or \
+                    reopen by forcing reopen status"
+            if jira.find_transitionid_by_name(issue,
+                                              "reopen issue"):
+                print("status change from %s to reopen issue" %
+                      issue.fields.status)
+                jira.transition_issue(issue,
+                                      jira.find_transitionid_by_name
+                                      (issue, "reopen issue"))
+            # print issue_dict
+            issue.update(summary=issue_dict['summary'],
+                         description=issue_dict['description'])
+        else:
+            print "no more vuln: closing"
+            trans_id = jira.find_transitionid_by_name(issue, "resolved issue")
+            if trans_id:
+                print("status change from %s to resolved issue" %
+                      issue.fields.status)
+                jira.transition_issue(issue, trans_id)
+            issue.update(summary='[SCAN] %s: no patch pending' %
+                         host_result
+                         ["info"]["host-ip"],
+                         description="No vulnerabilities, Good Job !")
+    elif num_vuln:
+        print("%s: CREATING NEW jira ticket" %
+              (host_result
+               ["info"]["host-ip"]))
+        # issue_dict = dict(project=project.key,
+        #                  issuetype={'name': 'Improvement'})
+        print jira.create_issue(fields=issue_dict)
+    else:
+        print("%s: no vulnerabilities, no jira ticket !" %
+              (host_result
+               ["info"]["host-ip"]))
+
+
+# Parsing all the project to search for corresponding scan in nessus
 projects = jira.projects()
 for project in projects:
     if not scan.scan_exists(name="scan_"+project.key):
-        print "No Nessus scan exist for project "+project.key
+        # print "No Nessus scan exist for project "+project.key
+        pass
     else:
         print "Nessus scan exist for project "+project.key+": starting it"
         scan._scan_tag(name="My Scans")
-        #you need to create a policy in nessus
-        scan.policy_set("nessus2jira")
+        scan.policy_set(scan_policy)
 
-        #running tests
-        scan.scan_run()
-        scan._scan_status()
+        # Running tests
+        # scan.scan_run()
+        # scan._scan_status()
 
-        #fetch result
+        # Parse scan result
         scan.get_host_vulns(name="scan_"+project.key)
         for scan_id in scan.host_vulns:
             print scan_id
             for host_id in scan.host_vulns[scan_id]:
-                num_vuln = 0
-                description="list of pending vulnerabilities:\n"
-                for vulns in scan.host_vulns[scan_id][host_id]["vulnerabilities"]:
-                    #if the server cant be ping , raise a warning
-                    if (vulns["plugin_id"] == 10180):
-                        num_vuln = num_vuln + 1
-                        summary = ("[SCAN] The remote host %s is considered as dead - not scanning\n" %
-                        (scan.host_vulns[scan_id][host_id]["info"]["host-ip"]))
-                    if (vulns["severity"] > 2):
-                        num_vuln = num_vuln + 1
-                        description = description + "%s, severity: %s\n" % (vulns["plugin_name"],vulns["severity"])
-                        summary = ("[SCAN] %s: %i patch(s) pending" %
-                        (scan.host_vulns[scan_id][host_id]["info"]["host-ip"],num_vuln))
+                issue_dict, n_vuln = build_issue(project.key, scan.host_vulns
+                                                 [scan_id][host_id])
 
                 # Opening a new jira ticket or updating existing one
-                already_open = jira.search_issues('project = \'' + project.key + '\' '
-                                'AND summary ~ \'SCAN\' ' +
-                                'AND summary ~ ' +
-                                scan.host_vulns[scan_id][host_id]["info"]["host-ip"])
-                if already_open:
-                    print("%s: UPDATING jira ticket: %s" %
-                        (scan.host_vulns[scan_id][host_id]["info"]["host-ip"],already_open[0]))
-                    issue = jira.issue(already_open[0])
-                    if num_vuln:
-                        print "still have some vuln: ensure it is open or reopen by forcing reopen status"
-                        if jira.find_transitionid_by_name(issue, "reopen issue"):
-                            print("status change from %s to reopen issue" % issue.fields.status)
-                            jira.transition_issue(issue, jira.find_transitionid_by_name(issue, "reopen issue"))
-                        issue.update(summary=summary, description=description)
-                    else:
-                        print "no more vuln: closing"
-                        if jira.find_transitionid_by_name(issue, "resolved issue"):
-                            print("status change from %s to resolved issue" % issue.fields.status)
-                            jira.transition_issue(issue, jira.find_transitionid_by_name(issue, "resolved issue"))
-                        issue.update(summary='[SCAN] %s: no patch pending' %
-                                scan.host_vulns[scan_id][host_id]["info"]["host-ip"],
-                                description="No vulnerabilities , Good Job !")
-                elif num_vuln:
-                    print("%s: CREATING NEW jira ticket" %
-                        (scan.host_vulns[scan_id][host_id]["info"]["host-ip"]))
-                    print jira.create_issue(project=project.key, summary=summary,
-                        description=description, issuetype={'name': 'Improvement'})
-                else:
-                    print("%s: no vulnerabilities, no jira ticket !" %
-                        (scan.host_vulns[scan_id][host_id]["info"]["host-ip"]))
+                update_jira_ticket(scan.host_vulns[scan_id][host_id],
+                                   find_issue(project.key, scan.host_vulns
+                                              [scan_id][host_id]
+                                              ["info"]["host-ip"]),
+                                   n_vuln, issue_dict)
