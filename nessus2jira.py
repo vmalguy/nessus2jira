@@ -125,8 +125,8 @@ for project in projects:
         scan.policy_set(scan_policy)
 
         # Running tests
-        # scan.scan_run()
-        # scan._scan_status()
+        scan.scan_run()
+        scan._scan_status()
 
         # Parse scan result
         scan.get_host_vulns(name="scan_"+project.key)
