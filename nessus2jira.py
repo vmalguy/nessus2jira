@@ -10,32 +10,27 @@ import sys
 sys.path.append('../')
 from nessrest import ness6rest
 from jira import JIRA
+import ConfigParser
+
+# source configuration
+config = ConfigParser.ConfigParser()
+config.readfp(open('./nessus2jira.cfg'))
 
 # Nessus credentials and setup
 scan_policy = "nessus2jira"
-api_akey = ''
-api_skey = ''
-scan = ness6rest.Scanner(url="https://my_nessus_scanner:8443",
-                         api_akey=api_akey,
-                         api_skey=api_skey, insecure=True)
+tag_name = config.get("nessus", "tag_name")
+scan = ness6rest.Scanner(url=config.get("nessus", "url"),
+                         api_akey=config.get("nessus", "api_akey"),
+                         api_skey=config.get("nessus", "api_skey"),
+                         insecure=config.get("nessus", "insecure"))
+# scan policy must be created under "Advanced" sections
 
 # Jira Credential and setup
 options = {
-    'server': 'https://my_jira_server'
+    'server': config.get("jira", "server")
 }
-jira = JIRA(options, basic_auth=('', ''))
-# or using OAuth
-# key_cert_data = None
-# with open(key_cert, 'r') as key_cert_file:
-#     key_cert_data = key_cert_file.read()
-#
-# oauth_dict = {
-#     'access_token': 'd87f3hajglkjh89a97f8',
-#     'access_token_secret': 'a9f8ag0ehaljkhgeds90',
-#     'consumer_key': 'jira-oauth-consumer',
-#     'key_cert': key_cert_data
-# }
-# authed_jira = JIRA(oauth=oauth_dict)
+jira = JIRA(options, basic_auth=(config.get("jira", "user"),
+                                 config.get("jira", "password")))
 
 
 def build_issue(project_key, host_result):
