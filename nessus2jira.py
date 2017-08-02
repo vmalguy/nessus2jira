@@ -111,11 +111,11 @@ def update_jira_ticket(host_result, ticket_id, num_vuln, issue_dict):
 # Parsing all the project to search for corresponding scan in nessus
 projects = jira.projects()
 for project in projects:
-    if not scan.scan_exists(name="scan_"+project.key):
+    if not scan.scan_exists(name="scan_" + project.key):
         # print "No Nessus scan exist for project "+project.key
         pass
     else:
-        print "Nessus scan exist for project "+project.key+": starting it"
+        print "Nessus scan exist for project " + project.key + ": starting it"
         scan._scan_tag(name="My Scans")
         scan.policy_set(scan_policy)
 
@@ -124,7 +124,7 @@ for project in projects:
         scan._scan_status()
 
         # Parse scan result
-        scan.get_host_vulns(name="scan_"+project.key)
+        scan.get_host_vulns(name="scan_" + project.key)
         for scan_id in scan.host_vulns:
             print scan_id
             for host_id in scan.host_vulns[scan_id]:
